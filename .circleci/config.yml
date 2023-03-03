@@ -69,6 +69,7 @@ references:
     windows_yarn_cache_key: &windows_yarn_cache_key v1-win-yarn-cache-{{ arch }}-{{ checksum "yarn.lock" }}
     windows_choco_cache_key: &windows_choco_cache_key v1-win-choco-cache-{{ .Environment.CIRCLE_JOB }}
     yarn_cache_key: &yarn_cache_key v5-yarn-cache-{{ .Environment.CIRCLE_JOB }}
+    rbenv_cache_key: &rbenv_cache_key v1-rbenv-{{ checksum "/tmp/required_ruby" }}
 
   cache_paths:
     hermes_workspace_macos_cache_paths: &hermes_workspace_macos_cache_paths
@@ -157,14 +158,46 @@ commands:
           command: mkdir -p ./reports/{buck,build,junit,outputs}
 
   setup_ruby:
+    parameters:
+      ruby_version:
+        default: "2.6.10"
+        type: string
     steps:
       - restore_cache:
           key: *gems_cache_key
       - run:
+          name: Set Required Ruby
+          command: echo << parameters.ruby_version >> > /tmp/required_ruby
+      - restore_cache:
+          key: *rbenv_cache_key
+      - run:
           name: Bundle Install
           command: |
-            source /usr/local/share/chruby/auto.sh
+            brew install rbenv ruby-build
+            echo ">>> Initialize rbenv"
+            (rbenv init 2> /dev/null) || true
+
+            echo ">>> Setup bash profile for rbenv"
+            echo '' >>  ~/.bash_profile
+            echo 'eval "$(rbenv init - bash)"' >> ~/.bash_profile
+            source ~/.bash_profile
+
+            if [[ -z "$(rbenv versions | grep << parameters.ruby_version >>)" ]]; then
+              echo ">>> Try installing ruby << parameters.ruby_version >>"
+              rbenv install << parameters.ruby_version >>
+            fi
+
+            echo ">>> Try setting ruby << parameters.ruby_version >> as global ruby"
+            rbenv global << parameters.ruby_version >>
+
+            echo ">> Running bundle check and bundle install"
+            which ruby
+            ruby -v
             bundle check || bundle install --path vendor/bundle --clean
+      - save_cache:
+          key: *rbenv_cache_key
+          paths:
+            - ~/.rbenv
       - save_cache:
           key: *gems_cache_key
           paths:
@@ -579,6 +612,10 @@ jobs:
       - *attach_hermes_workspace
       - run: |
           cd packages/rn-tester
+
+          which ruby
+          ruby -v
+
           bundle check || bundle install
       - run:
           name: Boot iPhone Simulator
@@ -614,7 +651,10 @@ jobs:
 
       - run:
           name: Setup the CocoaPods environment
-          command: bundle exec pod setup
+          command: |
+            which ruby
+            ruby -v
+            bundle exec pod setup
 
       - with_hermes_tarball_cache_span:
           set_tarball_path: True
@@ -629,6 +669,10 @@ jobs:
                         fi
 
                         cd packages/rn-tester
+
+                        which ruby
+                        ruby -v
+
                         bundle install
                         bundle exec pod install --verbose
 
@@ -869,6 +913,7 @@ jobs:
       - attach_workspace:
           at: .
       - *attach_hermes_workspace
+      - setup_ruby
       - when:
           condition:
             equal: ["Hermes", << parameters.jsengine >>]
@@ -892,8 +937,6 @@ jobs:
           command: |
             cd /tmp/$PROJECT_NAME/ios
 
-            bundle install
-
             if [[ << parameters.flavor >> == "Release" ]]; then
               export PRODUCTION=1
             fi
@@ -916,6 +959,10 @@ jobs:
               export USE_FRAMEWORKS=dynamic
             fi
 
+            which ruby
+            ruby -v
+
+            bundle install
             bundle exec pod install
       - run:
           name: Build template project
@@ -954,7 +1001,7 @@ jobs:
           name: Delete iOS Simulators
           background: true
           command: sudo rm -rf /Library/Developer/CoreSimulator/Profiles/Runtimes/
-
+      - setup_ruby
       - with_hermes_tarball_cache_span:
           set_tarball_path: True
           steps:
@@ -972,6 +1019,10 @@ jobs:
                   fi
 
                   cd packages/rn-tester
+
+                  which ruby
+                  ruby -v
+
                   bundle install
                   bundle exec pod install
 
