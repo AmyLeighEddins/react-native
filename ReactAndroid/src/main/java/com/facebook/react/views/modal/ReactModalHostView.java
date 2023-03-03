@@ -288,7 +288,7 @@ public class ReactModalHostView extends ViewGroup
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
 
     // TODO(T85755791): remove after investigation
-    FLog.e(TAG, "Creating new dialog from context: " + context + "@" + context.hashCode());
+    FLog.e(TAG, "Creating new dialog from context amy test: " + context + "@" + context.hashCode());
 
     mDialog.setContentView(getContentView());
     updateProperties();
